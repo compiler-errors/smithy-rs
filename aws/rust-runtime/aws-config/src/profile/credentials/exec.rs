@@ -68,12 +68,12 @@ impl AssumeRoleProvider {
 
 #[derive(Debug)]
 pub(super) struct ProviderChain {
-    base: Arc<dyn ProvideCredentials>,
+    base: Arc<dyn ProvideCredentialsDyn>,
     chain: Vec<AssumeRoleProvider>,
 }
 
 impl ProviderChain {
-    pub(crate) fn base(&self) -> &dyn ProvideCredentials {
+    pub(crate) fn base(&self) -> &dyn ProvideCredentialsDyn {
         self.base.as_ref()
     }
 
@@ -158,7 +158,7 @@ pub(super) mod named {
 
     #[derive(Debug)]
     pub(crate) struct NamedProviderFactory {
-        providers: HashMap<Cow<'static, str>, Arc<dyn ProvideCredentials>>,
+        providers: HashMap<Cow<'static, str>, Arc<dyn ProvideCredentialsDyn>>,
     }
 
     fn lower_cow(mut input: Cow<'_, str>) -> Cow<'_, str> {
@@ -170,7 +170,7 @@ pub(super) mod named {
 
     impl NamedProviderFactory {
         pub(crate) fn new(
-            providers: HashMap<Cow<'static, str>, Arc<dyn ProvideCredentials>>,
+            providers: HashMap<Cow<'static, str>, Arc<dyn ProvideCredentialsDyn>>,
         ) -> Self {
             let providers = providers
                 .into_iter()
@@ -179,7 +179,7 @@ pub(super) mod named {
             Self { providers }
         }
 
-        pub(crate) fn provider(&self, name: &str) -> Option<Arc<dyn ProvideCredentials>> {
+        pub(crate) fn provider(&self, name: &str) -> Option<Arc<dyn ProvideCredentialsDyn>> {
             self.providers.get(&lower_cow(Cow::Borrowed(name))).cloned()
         }
     }

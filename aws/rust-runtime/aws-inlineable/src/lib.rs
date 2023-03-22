@@ -18,6 +18,7 @@
     rust_2018_idioms,
     unreachable_pub
 )]
+#![feature(async_fn_in_trait)]
 
 /// Stub credentials provider for use when no credentials provider is used.
 pub mod no_credentials;

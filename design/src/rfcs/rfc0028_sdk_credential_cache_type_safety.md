@@ -62,7 +62,7 @@ impl CredentialsCache {
 
     pub(crate) fn create_cache(
         self,
-        provider: Box<dyn ProvideCredentials>,
+        provider: Box<dyn ProvideCredentialsDyn>,
         sleep_impl: Arc<dyn AsyncSleep>
     ) -> SharedCredentialsProvider {
         // Note: SharedCredentialsProvider would get renamed to SharedCredentialsCache.
@@ -218,17 +218,17 @@ caching approach for a given credentials provider:
 
 ```rust
 pub struct LazyCache {
-    credentials_provider: Arc<dyn ProvideCredentials>,
+    credentials_provider: Arc<dyn ProvideCredentialsDyn>,
     // ...
 }
 
 pub struct EagerCache {
-    credentials_provider: Arc<dyn ProvideCredentials>,
+    credentials_provider: Arc<dyn ProvideCredentialsDyn>,
     // ...
 }
 
 pub struct CustomCache {
-    credentials_provider: Arc<dyn ProvideCredentials>,
+    credentials_provider: Arc<dyn ProvideCredentialsDyn>,
     // Not naming or specifying the custom cache trait for now since its out of scope
     cache: Arc<dyn SomeCacheTrait>
 }

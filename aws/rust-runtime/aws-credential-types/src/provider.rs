@@ -37,8 +37,9 @@ construct credentials from hardcoded values.
 //! defining an inherent `async fn` on your structure, then calling that method directly from
 //! the trait implementation.
 //! ```rust
+//! #![feature(async_fn_in_trait)]
 //! use aws_credential_types::{
-//!     provider::{self, future, error::CredentialsError, ProvideCredentials},
+//!     provider::{self, error::CredentialsError, ProvideCredentials},
 //!     Credentials,
 //! };
 //! #[derive(Debug)]
@@ -57,21 +58,17 @@ construct credentials from hardcoded values.
 //!     Ok(Credentials::new(akid, secret, None, None, "CustomCommand"))
 //! }
 //!
-//! impl SubprocessCredentialProvider {
-//!     async fn load_credentials(&self) -> provider::Result {
+//! impl ProvideCredentials for SubprocessCredentialProvider {
+//!     async fn provide_credentials(&self) -> provider::Result {
 //!         let creds = invoke_command("load-credentials.py").await;
 //!         parse_credentials(&creds)
-//!     }
-//! }
-//!
-//! impl ProvideCredentials for SubprocessCredentialProvider {
-//!     fn provide_credentials<'a>(&'a self) -> future::ProvideCredentials<'a> where Self: 'a {
-//!         future::ProvideCredentials::new(self.load_credentials())
 //!     }
 //! }
 //! ```
 
 use crate::Credentials;
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::Arc;
 
 /// Credentials provider errors
@@ -240,46 +237,10 @@ pub mod error {
 /// Result type for credential providers.
 pub type Result = std::result::Result<Credentials, error::CredentialsError>;
 
-/// Convenience `ProvideCredentials` struct that implements the `ProvideCredentials` trait.
-pub mod future {
-    use aws_smithy_async::future::now_or_later::NowOrLater;
-    use std::future::Future;
-    use std::pin::Pin;
-    use std::task::{Context, Poll};
-
-    type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
-
-    /// Future new-type that `ProvideCredentials::provide_credentials` must return.
-    #[derive(Debug)]
-    pub struct ProvideCredentials<'a>(NowOrLater<super::Result, BoxFuture<'a, super::Result>>);
-
-    impl<'a> ProvideCredentials<'a> {
-        /// Creates a `ProvideCredentials` struct from a future.
-        pub fn new(future: impl Future<Output = super::Result> + Send + 'a) -> Self {
-            ProvideCredentials(NowOrLater::new(Box::pin(future)))
-        }
-
-        /// Creates a `ProvideCredentials` struct from a resolved credentials value.
-        pub fn ready(credentials: super::Result) -> Self {
-            ProvideCredentials(NowOrLater::ready(credentials))
-        }
-    }
-
-    impl Future for ProvideCredentials<'_> {
-        type Output = super::Result;
-
-        fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-            Pin::new(&mut self.0).poll(cx)
-        }
-    }
-}
-
 /// Asynchronous Credentials Provider
-pub trait ProvideCredentials: Send + Sync + std::fmt::Debug {
+pub trait ProvideCredentials: std::fmt::Debug {
     /// Returns a future that provides credentials.
-    fn provide_credentials<'a>(&'a self) -> future::ProvideCredentials<'a>
-    where
-        Self: 'a;
+    async fn provide_credentials(&self) -> Result;
 
     /// Returns fallback credentials.
     ///
@@ -295,21 +256,25 @@ pub trait ProvideCredentials: Send + Sync + std::fmt::Debug {
     }
 }
 
-impl ProvideCredentials for Credentials {
-    fn provide_credentials<'a>(&'a self) -> future::ProvideCredentials<'a>
-    where
-        Self: 'a,
-    {
-        future::ProvideCredentials::ready(Ok(self.clone()))
+pub trait ProvideCredentialsDyn: Send + Sync + std::fmt::Debug {
+    fn provide_credentials_dyn(&self) -> Pin<Box<dyn Future<Output = Result> + Send + '_>>;
+}
+
+impl<T: ProvideCredentials<provide_credentials(..): Send> + Send + Sync> ProvideCredentialsDyn for T {
+    fn provide_credentials_dyn(&self) -> Pin<Box<dyn Future<Output = Result> + Send + '_>> {
+        Box::pin(self.provide_credentials())
     }
 }
 
-impl ProvideCredentials for Arc<dyn ProvideCredentials> {
-    fn provide_credentials<'a>(&'a self) -> future::ProvideCredentials<'a>
-    where
-        Self: 'a,
-    {
-        self.as_ref().provide_credentials()
+impl ProvideCredentials for Credentials {
+    async fn provide_credentials(&self) -> Result {
+        Ok(self.clone())
+    }
+}
+
+impl ProvideCredentials for Arc<dyn ProvideCredentialsDyn> {
+    async fn provide_credentials(&self) -> Result {
+        self.as_ref().provide_credentials_dyn().await
     }
 }
 
@@ -318,35 +283,34 @@ impl ProvideCredentials for Arc<dyn ProvideCredentials> {
 /// Newtype wrapper around ProvideCredentials that implements Clone using an internal
 /// Arc.
 #[derive(Clone, Debug)]
-pub struct SharedCredentialsProvider(Arc<dyn ProvideCredentials>);
+pub struct SharedCredentialsProvider(Arc<dyn ProvideCredentialsDyn>);
 
 impl SharedCredentialsProvider {
     /// Create a new SharedCredentials provider from `ProvideCredentials`
     ///
     /// The given provider will be wrapped in an internal `Arc`. If your
     /// provider is already in an `Arc`, use `SharedCredentialsProvider::from(provider)` instead.
-    pub fn new(provider: impl ProvideCredentials + 'static) -> Self {
+    pub fn new(
+        provider: impl ProvideCredentials<provide_credentials(..): Send> + Send + Sync + 'static,
+    ) -> Self {
         Self(Arc::new(provider))
     }
 }
 
-impl AsRef<dyn ProvideCredentials> for SharedCredentialsProvider {
-    fn as_ref(&self) -> &(dyn ProvideCredentials + 'static) {
+impl AsRef<dyn ProvideCredentialsDyn> for SharedCredentialsProvider {
+    fn as_ref(&self) -> &(dyn ProvideCredentialsDyn + 'static) {
         self.0.as_ref()
     }
 }
 
-impl From<Arc<dyn ProvideCredentials>> for SharedCredentialsProvider {
-    fn from(provider: Arc<dyn ProvideCredentials>) -> Self {
+impl From<Arc<dyn ProvideCredentialsDyn>> for SharedCredentialsProvider {
+    fn from(provider: Arc<dyn ProvideCredentialsDyn>) -> Self {
         SharedCredentialsProvider(provider)
     }
 }
 
 impl ProvideCredentials for SharedCredentialsProvider {
-    fn provide_credentials<'a>(&'a self) -> future::ProvideCredentials<'a>
-    where
-        Self: 'a,
-    {
-        self.0.provide_credentials()
+    async fn provide_credentials(&self) -> Result {
+        self.0.provide_credentials_dyn().await
     }
 }

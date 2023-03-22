@@ -16,6 +16,7 @@
     rustdoc::missing_crate_level_docs,
     unreachable_pub
 )]
+#![feature(async_fn_in_trait, return_type_notation)]
 
 pub mod cache;
 pub mod credential_fn;

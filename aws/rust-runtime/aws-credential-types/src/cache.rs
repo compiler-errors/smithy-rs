@@ -11,15 +11,35 @@ mod lazy_caching;
 pub use expiring_cache::ExpiringCache;
 pub use lazy_caching::Builder as LazyBuilder;
 
-use crate::provider::{future, SharedCredentialsProvider};
+use crate::provider::{Result as ProvideCredentialsResult, SharedCredentialsProvider};
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::Arc;
 
 /// Asynchronous Cached Credentials Provider
-pub trait ProvideCachedCredentials: Send + Sync + std::fmt::Debug {
+pub trait ProvideCachedCredentials: std::fmt::Debug {
     /// Returns a future that provides cached credentials.
-    fn provide_cached_credentials<'a>(&'a self) -> future::ProvideCredentials<'a>
-    where
-        Self: 'a;
+    async fn provide_cached_credentials(&self) -> ProvideCredentialsResult;
+}
+
+pub trait ProvideCachedCredentialsDyn: Send + Sync + std::fmt::Debug {
+    fn provide_cached_credentials_dyn(
+        &self,
+    ) -> Pin<Box<dyn Future<Output = ProvideCredentialsResult> + Send + '_>>;
+}
+
+impl<
+        T: ProvideCachedCredentials<provide_cached_credentials(..): Send>
+            + Send
+            + Sync
+            + std::fmt::Debug,
+    > ProvideCachedCredentialsDyn for T
+{
+    fn provide_cached_credentials_dyn(
+        &self,
+    ) -> Pin<Box<dyn Future<Output = ProvideCredentialsResult> + Send + '_>> {
+        Box::pin(self.provide_cached_credentials())
+    }
 }
 
 /// Credentials cache wrapper that may be shared
@@ -27,36 +47,38 @@ pub trait ProvideCachedCredentials: Send + Sync + std::fmt::Debug {
 /// Newtype wrapper around `ProvideCachedCredentials` that implements `Clone` using an internal
 /// `Arc`.
 #[derive(Clone, Debug)]
-pub struct SharedCredentialsCache(Arc<dyn ProvideCachedCredentials>);
+pub struct SharedCredentialsCache(Arc<dyn ProvideCachedCredentialsDyn>);
 
 impl SharedCredentialsCache {
     /// Create a new `SharedCredentialsCache` from `ProvideCachedCredentials`
     ///
     /// The given `cache` will be wrapped in an internal `Arc`. If your
     /// cache is already in an `Arc`, use `SharedCredentialsCache::from(cache)` instead.
-    pub fn new(provider: impl ProvideCachedCredentials + 'static) -> Self {
+    pub fn new<C: ProvideCachedCredentials<provide_cached_credentials(..): Send>
+    + Send
+    + Sync
+    + 'static>(
+        provider: C,
+    ) -> Self {
         Self(Arc::new(provider))
     }
 }
 
-impl AsRef<dyn ProvideCachedCredentials> for SharedCredentialsCache {
-    fn as_ref(&self) -> &(dyn ProvideCachedCredentials + 'static) {
+impl AsRef<dyn ProvideCachedCredentialsDyn> for SharedCredentialsCache {
+    fn as_ref(&self) -> &(dyn ProvideCachedCredentialsDyn + 'static) {
         self.0.as_ref()
     }
 }
 
-impl From<Arc<dyn ProvideCachedCredentials>> for SharedCredentialsCache {
-    fn from(cache: Arc<dyn ProvideCachedCredentials>) -> Self {
+impl From<Arc<dyn ProvideCachedCredentialsDyn>> for SharedCredentialsCache {
+    fn from(cache: Arc<dyn ProvideCachedCredentialsDyn>) -> Self {
         SharedCredentialsCache(cache)
     }
 }
 
 impl ProvideCachedCredentials for SharedCredentialsCache {
-    fn provide_cached_credentials<'a>(&'a self) -> future::ProvideCredentials<'a>
-    where
-        Self: 'a,
-    {
-        self.0.provide_cached_credentials()
+    async fn provide_cached_credentials(&self) -> ProvideCredentialsResult {
+        self.0.provide_cached_credentials_dyn().await
     }
 }
 

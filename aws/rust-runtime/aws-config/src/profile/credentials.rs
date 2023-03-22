@@ -319,7 +319,7 @@ pub struct Builder {
     provider_config: Option<ProviderConfig>,
     profile_override: Option<String>,
     profile_files: Option<ProfileFiles>,
-    custom_providers: HashMap<Cow<'static, str>, Arc<dyn ProvideCredentials>>,
+    custom_providers: HashMap<Cow<'static, str>, Arc<dyn ProvideCredentialsDyn>>,
 }
 
 impl Builder {

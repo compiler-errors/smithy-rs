@@ -14,7 +14,9 @@ use tracing::{debug, info, info_span, Instrument};
 
 use crate::cache::{ExpiringCache, ProvideCachedCredentials};
 use crate::provider::SharedCredentialsProvider;
-use crate::provider::{error::CredentialsError, future, ProvideCredentials};
+use crate::provider::{
+    error::CredentialsError, ProvideCredentials, Result as ProvideCredentialsResult,
+};
 use crate::time_source::TimeSource;
 
 const DEFAULT_LOAD_TIMEOUT: Duration = Duration::from_secs(5);
@@ -58,10 +60,7 @@ impl LazyCredentialsCache {
 }
 
 impl ProvideCachedCredentials for LazyCredentialsCache {
-    fn provide_cached_credentials<'a>(&'a self) -> future::ProvideCredentials<'_>
-    where
-        Self: 'a,
-    {
+    async fn provide_cached_credentials(&self) -> ProvideCredentialsResult {
         let now = self.time.now();
         let provider = self.provider.clone();
         let timeout_future = self.sleeper.sleep(self.load_timeout);
@@ -69,19 +68,17 @@ impl ProvideCachedCredentials for LazyCredentialsCache {
         let cache = self.cache.clone();
         let default_credential_expiration = self.default_credential_expiration;
 
-        future::ProvideCredentials::new(async move {
-            // Attempt to get cached credentials, or clear the cache if they're expired
-            if let Some(credentials) = cache.yield_or_clear_if_expired(now).await {
-                debug!("loaded credentials from cache");
-                Ok(credentials)
-            } else {
-                // If we didn't get credentials from the cache, then we need to try and load.
-                // There may be other threads also loading simultaneously, but this is OK
-                // since the futures are not eagerly executed, and the cache will only run one
-                // of them.
-                let future = Timeout::new(provider.provide_credentials(), timeout_future);
-                let start_time = Instant::now();
-                let result = cache
+        if let Some(credentials) = cache.yield_or_clear_if_expired(now).await {
+            debug!("loaded credentials from cache");
+            Ok(credentials)
+        } else {
+            // If we didn't get credentials from the cache, then we need to try and load.
+            // There may be other threads also loading simultaneously, but this is OK
+            // since the futures are not eagerly executed, and the cache will only run one
+            // of them.
+            let future = Timeout::new(provider.provide_credentials(), timeout_future);
+            let start_time = Instant::now();
+            let result = cache
                     .get_or_load(|| {
                         let span = info_span!("lazy_load_credentials");
                         let provider = provider.clone();
@@ -122,10 +119,9 @@ impl ProvideCachedCredentials for LazyCredentialsCache {
                         .instrument(span)
                     })
                     .await;
-                debug!("loaded credentials");
-                result
-            }
-        })
+            debug!("loaded credentials");
+            result
+        }
     }
 }
 

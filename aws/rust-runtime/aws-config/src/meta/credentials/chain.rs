@@ -35,7 +35,7 @@ use tracing::Instrument;
 /// ```
 #[derive(Debug)]
 pub struct CredentialsProviderChain {
-    providers: Vec<(Cow<'static, str>, Box<dyn ProvideCredentials>)>,
+    providers: Vec<(Cow<'static, str>, Box<dyn ProvideCredentialsDyn>)>,
 }
 
 impl CredentialsProviderChain {

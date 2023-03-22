@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-use aws_credential_types::provider::{error::CredentialsError, future, ProvideCredentials};
+use aws_credential_types::provider::{error::CredentialsError, ProvideCredentials, Result as ProvideCredentialsResult};
 
 /// Stub credentials provider for use when no credentials provider is used.
 #[non_exhaustive]
@@ -11,13 +11,11 @@ use aws_credential_types::provider::{error::CredentialsError, future, ProvideCre
 pub struct NoCredentials;
 
 impl ProvideCredentials for NoCredentials {
-    fn provide_credentials<'a>(&'a self) -> future::ProvideCredentials<'a>
-    where
-        Self: 'a,
+    async fn provide_credentials(&self) -> ProvideCredentialsResult
     {
-        future::ProvideCredentials::ready(Err(CredentialsError::not_loaded(
+        Err(CredentialsError::not_loaded(
             "No credentials provider was enabled for the service. \
         hint: use aws-config to provide a credentials chain.",
-        )))
+        ))
     }
 }

@@ -13,6 +13,7 @@
     rust_2018_idioms,
     unreachable_pub
 )]
+#![feature(async_fn_in_trait)]
 
 /// Credentials middleware
 pub mod auth;

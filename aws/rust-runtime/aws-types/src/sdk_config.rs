@@ -352,9 +352,10 @@ impl Builder {
     ///
     /// # Examples
     /// ```rust
+    /// #![feature(return_type_notation)]
     /// use aws_credential_types::provider::{ProvideCredentials, SharedCredentialsProvider};
     /// use aws_types::SdkConfig;
-    /// fn make_provider() -> impl ProvideCredentials {
+    /// fn make_provider() -> impl ProvideCredentials<provide_credentials(..): Send> {
     ///   // ...
     ///   # use aws_credential_types::Credentials;
     ///   # Credentials::new("test", "test", None, None, "example")

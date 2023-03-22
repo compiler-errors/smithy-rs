@@ -9,7 +9,7 @@ use std::fmt::{self, Debug, Formatter};
 use std::future::Future;
 use std::marker::PhantomData;
 
-use crate::provider::{future, ProvideCredentials};
+use crate::provider::{ProvideCredentials, Result as ProvideCredentialsResult};
 
 /// A [`ProvideCredentials`] implemented by a closure.
 ///
@@ -31,11 +31,8 @@ where
     T: Fn() -> F + Send + Sync + 'c,
     F: Future<Output = crate::provider::Result> + Send + 'static,
 {
-    fn provide_credentials<'a>(&'a self) -> future::ProvideCredentials<'a>
-    where
-        Self: 'a,
-    {
-        future::ProvideCredentials::new((self.f)())
+    async fn provide_credentials(&self) -> ProvideCredentialsResult {
+        (self.f)().await
     }
 }
 
@@ -74,7 +71,7 @@ where
 mod test {
     use crate::credential_fn::provide_credentials_fn;
     use crate::{
-        provider::{future, ProvideCredentials},
+        provider::{ProvideCredentials, Result as ProvideCredentialsResult},
         Credentials,
     };
     use async_trait::async_trait;
@@ -103,11 +100,8 @@ mod test {
     }
 
     impl<T: AnotherTrait> ProvideCredentials for AnotherTraitWrapper<T> {
-        fn provide_credentials<'a>(&'a self) -> future::ProvideCredentials<'a>
-        where
-            Self: 'a,
-        {
-            future::ProvideCredentials::new(async move { Ok(self.inner.creds().await) })
+        async fn provide_credentials(&self) -> ProvideCredentialsResult {
+            Ok(self.inner.creds().await)
         }
     }
 

@@ -117,7 +117,7 @@ mod tests {
     };
     use aws_credential_types::credential_fn::provide_credentials_fn;
     use aws_credential_types::provider::SharedCredentialsProvider;
-    use aws_credential_types::provider::{error::CredentialsError, future};
+    use aws_credential_types::provider::{error::CredentialsError, Result as ProvideCredentialsResult};
     use aws_credential_types::Credentials;
     use aws_smithy_http::body::SdkBody;
     use aws_smithy_http::middleware::AsyncMapRequest;
@@ -126,22 +126,18 @@ mod tests {
     #[derive(Debug)]
     struct Unhandled;
     impl ProvideCachedCredentials for Unhandled {
-        fn provide_cached_credentials<'a>(&'a self) -> future::ProvideCredentials<'a>
-        where
-            Self: 'a,
+        async fn provide_cached_credentials(&self) -> ProvideCredentialsResult
         {
-            future::ProvideCredentials::ready(Err(CredentialsError::unhandled("whoops")))
+            Err(CredentialsError::unhandled("whoops"))
         }
     }
 
     #[derive(Debug)]
     struct NoCreds;
     impl ProvideCachedCredentials for NoCreds {
-        fn provide_cached_credentials<'a>(&'a self) -> future::ProvideCredentials<'a>
-        where
-            Self: 'a,
+        async fn provide_cached_credentials(&self) -> ProvideCredentialsResult
         {
-            future::ProvideCredentials::ready(Err(CredentialsError::not_loaded("no creds")))
+            Err(CredentialsError::not_loaded("no creds"))
         }
     }
 
